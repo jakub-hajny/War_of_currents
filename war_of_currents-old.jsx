@@ -81,8 +81,6 @@ const doShuffle = (q) => {
 };
 
 const EC = "#f97316", TC = "#38bdf8";
-const AUTO_DELAY   = 1000;   // ms after time-up before auto-grading
-const AUTO_ADVANCE = 3500;   // ms showing result before auto-advancing
 
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700;900&family=Cinzel:wght@600;700&family=Rajdhani:wght@400;600;700&family=Orbitron:wght@700;900&display=swap');
@@ -92,7 +90,6 @@ const CSS = `
   @keyframes flashIn { 0%{opacity:0;transform:scale(0.85)} 60%{transform:scale(1.04)} 100%{opacity:1;transform:scale(1)} }
   @keyframes blink   { 0%,100%{opacity:1} 50%{opacity:0.18} }
   @keyframes popIn   { 0%{opacity:0;transform:scale(0.7)} 60%{transform:scale(1.08)} 100%{opacity:1;transform:scale(1)} }
-  @keyframes deplete { from{width:100%} to{width:0%} }
   button { font-family: inherit; }
   button:not(:disabled):hover { filter: brightness(1.18); }
 `;
@@ -128,27 +125,12 @@ function App() {
   const [timerOn,  setTimerOn]  = useState(false);
   const [timeUp,   setTimeUp]   = useState(false);
   const [gr,       setGr]       = useState(null);
-
-  const timerRef   = useRef(null); // countdown tick
-  const agRef      = useRef(null); // auto-grade delay after time-up
-  const nextQRef   = useRef(null); // always-fresh nextQ pointer
-
-  // Refs to avoid stale closures inside timer effect
-  const curTeamRef = useRef(curTeam);
-  const pctRef     = useRef(pct);
-  const qRef       = useRef(null);
-  const roundRef   = useRef(null);
+  const timerRef = useRef(null);
 
   const round = ROUNDS[roundIdx];
   const qs    = QUESTIONS[round.key];
   const q     = qs[qIdx];
   const total = qs.length;
-
-  // Keep refs in sync on every render
-  curTeamRef.current = curTeam;
-  pctRef.current     = pct;
-  qRef.current       = q;
-  roundRef.current   = round;
 
   /* ── časovač ─────────────────────────────────────────────── */
   useEffect(() => {
@@ -158,43 +140,16 @@ function App() {
         if (timeLeft <= 10) sfx("tick");
         timerRef.current = setTimeout(() => setTimeLeft(t => t - 1), 1000);
       } else {
-        // Time is up — auto-grade after a brief pause
         setTimerOn(false);
         setTimeUp(true);
         sfx("timeup");
-        agRef.current = setTimeout(() => {
-          const team        = curTeamRef.current;
-          const currPct     = pctRef.current;
-          const sw          = roundRef.current.swing;
-          const correctLetter = qRef.current.correct;
-          const newPct = team === "edison"
-            ? Math.max(0,   currPct - sw)
-            : Math.min(100, currPct + sw);
-          const winner = team === "edison" ? "tesla" : "edison";
-          const msg    = team === "edison"
-            ? `Čas vypršel! Tesla získává +${sw}%`
-            : `Čas vypršel! Edison získává +${sw}%`;
-          sfx("wrong");
-          setPct(newPct);
-          setGr({ correct: false, msg, winner, correctLetter, autoGraded: true });
-          setScreen("graded");
-        }, AUTO_DELAY);
       }
     }
     return () => clearTimeout(timerRef.current);
   }, [timerOn, timeLeft]);
 
-  /* ── automatický posun po auto-hodnocení ─────────────────── */
-  useEffect(() => {
-    if (screen === "graded" && gr?.autoGraded) {
-      const t = setTimeout(() => nextQRef.current?.(), AUTO_ADVANCE);
-      return () => clearTimeout(t);
-    }
-  }, [screen, gr]);
-
   /* ── herní logika ────────────────────────────────────────── */
   const beginQ = (rIdx, qI, time) => {
-    clearTimeout(agRef.current);
     const newQ = QUESTIONS[ROUNDS[rIdx].key][qI];
     setShuffled(doShuffle(newQ));
     setSelAns(null);
@@ -213,21 +168,22 @@ function App() {
 
   const gradeIt = () => {
     if (!selAns) return;
-    clearTimeout(agRef.current);   // cancel any pending auto-grade
     clearTimeout(timerRef.current);
     setTimerOn(false);
     const correct = selAns === q.correct;
     const sw      = round.swing;
     let newPct = pct, msg = "", winner = null;
+
     if (curTeam === "edison") {
       if (correct) { newPct = Math.min(100, pct + sw); msg = `Edison odpověděl správně! +${sw}%`; winner = "edison"; sfx("correct"); }
       else         { newPct = Math.max(0,   pct - sw); msg = `Špatně! Tesla získává +${sw}%`;     winner = "tesla";  sfx("wrong");   }
     } else {
-      if (correct) { newPct = Math.max(0,   pct - sw); msg = `Tesla odpověděla správně! +${sw}%`; winner = "tesla";  sfx("correct"); }
+      if (correct) { newPct = Math.max(0,   pct - sw); msg = `Tesla odpověděl správně! +${sw}%`;  winner = "tesla";  sfx("correct"); }
       else         { newPct = Math.min(100, pct + sw); msg = `Špatně! Edison získává +${sw}%`;    winner = "edison"; sfx("wrong");   }
     }
+
     setPct(newPct);
-    setGr({ correct, msg, winner, correctLetter: q.correct, autoGraded: false });
+    setGr({ correct, msg, winner, correctLetter: q.correct });
     setScreen("graded");
   };
 
@@ -244,11 +200,9 @@ function App() {
       beginQ(roundIdx, nQ, round.time);
     }
   };
-  nextQRef.current = nextQ; // keep ref fresh every render
 
   const reset = () => {
     clearTimeout(timerRef.current);
-    clearTimeout(agRef.current);
     setScreen("intro"); setRoundIdx(0); setQIdx(0); setPct(50);
     setCurTeam("edison"); setSelAns(null);
     setShuffled(doShuffle(QUESTIONS.easy[0]));
@@ -294,6 +248,7 @@ function App() {
         <span style={{ color:"rgba(255,255,255,0.12)", margin:"0 14px" }}>vs</span>
         <span style={{ color:TC, textShadow:"0 0 28px rgba(56,189,248,0.6)" }}>TESLA</span>
       </h1>
+
       <div style={{ display:"grid", gridTemplateColumns:"1fr auto 1fr", gap:16, maxWidth:760, width:"100%", marginBottom:32, alignItems:"center" }}>
         <div style={{ ...card, padding:"22px 20px", borderColor:"rgba(249,115,22,0.25)", background:"rgba(249,115,22,0.06)" }}>
           <div style={{ fontSize:40, marginBottom:10 }}>💡</div>
@@ -309,7 +264,9 @@ function App() {
           <p style={{ fontSize:13, color:"rgba(255,255,255,0.4)", lineHeight:1.6 }}>Mistr střídavého proudu. Teslovy inovace proměnily moderní energetiku.</p>
         </div>
       </div>
+
       <div style={{ maxWidth:560, width:"100%", marginBottom:32 }}><PercentBar pct={50} /></div>
+
       <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, maxWidth:500, width:"100%", marginBottom:40 }}>
         {ROUNDS.map(r => (
           <div key={r.key} style={{ ...card, padding:"14px 12px", textAlign:"center" }}>
@@ -322,6 +279,7 @@ function App() {
           </div>
         ))}
       </div>
+
       <button onClick={() => setScreen("roundStart")} style={{ background:"linear-gradient(135deg,rgba(249,115,22,0.2),rgba(56,189,248,0.2))", border:"1px solid rgba(255,255,255,0.15)", borderRadius:12, padding:"15px 52px", color:"#fff", fontFamily:"'Cinzel Decorative',serif", fontSize:15, fontWeight:700, cursor:"pointer", letterSpacing:"0.08em", boxShadow:"0 0 32px rgba(249,115,22,0.1),0 0 32px rgba(56,189,248,0.1)" }}>
         ZAHÁJIT VÁLKU
       </button>
@@ -363,7 +321,6 @@ function App() {
         {header}
         <div style={{ flex:1, padding:"18px 20px", maxWidth:880, margin:"0 auto", width:"100%", display:"flex", flexDirection:"column", gap:14 }}>
 
-          {/* horní popisky */}
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8 }}>
             <div style={{ display:"flex", gap:8 }}>
               <div style={{ padding:"4px 14px", borderRadius:9999, background:`${teamColor}1a`, border:`1px solid ${teamColor}55`, color:teamColor, fontFamily:"'Orbitron',monospace", fontSize:11, fontWeight:700, letterSpacing:"0.08em" }}>
@@ -376,7 +333,6 @@ function App() {
             <div style={{ color:"rgba(255,255,255,0.3)", fontFamily:"'Orbitron',monospace", fontSize:11 }}>{qIdx+1} / {total}</div>
           </div>
 
-          {/* časovač */}
           {isQ && (
             <div style={{ textAlign:"center", padding:"2px 0" }}>
               <div style={{ fontFamily:"'Orbitron',monospace", fontSize:"clamp(44px,7vw,72px)", fontWeight:900, color:timeUp ? "#f87171" : tColor, lineHeight:1, animation:isLow ? "blink 0.7s infinite" : "none" }}>
@@ -386,14 +342,13 @@ function App() {
                 ? <div style={{ height:3, background:"rgba(255,255,255,0.06)", borderRadius:9999, marginTop:8, overflow:"hidden" }}>
                     <div style={{ height:"100%", width:`${(timeLeft/round.time)*100}%`, background:tColor, borderRadius:9999, transition:"width 1s linear,background 0.5s" }} />
                   </div>
-                : <p style={{ marginTop:8, fontSize:13, color:"rgba(255,255,255,0.35)", fontFamily:"'Rajdhani',sans-serif", animation:"blink 1s infinite" }}>
-                    Automatické hodnocení za okamžik…
+                : <p style={{ marginTop:8, fontSize:13, color:"rgba(255,255,255,0.35)", fontFamily:"'Rajdhani',sans-serif" }}>
+                    Vyberte odpověď a klikněte na Ohodnotit
                   </p>
               }
             </div>
           )}
 
-          {/* otázka + možnosti */}
           <div style={{ ...card, padding:"18px 20px" }}>
             <p style={{ fontFamily:"'Cinzel',serif", fontSize:"clamp(15px,2.4vw,19px)", fontWeight:600, lineHeight:1.55, color:"#fff", marginBottom:16 }}>
               {q.question}
@@ -403,14 +358,12 @@ function App() {
                 const isSel   = selAns === opt.letter;
                 const isCorr  = isG && opt.letter === gr.correctLetter;
                 const isWrong = isG && isSel && !isCorr;
-                // On auto-graded, highlight correct even if nobody selected
-                const showCorr = isG && opt.letter === gr.correctLetter;
 
                 let bg = "rgba(255,255,255,0.04)", bdr = "rgba(255,255,255,0.08)";
                 let txt = "rgba(255,255,255,0.85)", shadow = "none";
                 let dotBg = "rgba(255,255,255,0.08)", dotClr = "rgba(255,255,255,0.4)";
 
-                if (showCorr) {
+                if (isCorr) {
                   bg="rgba(74,222,128,0.14)"; bdr="#4ade80"; txt="#4ade80"; shadow="0 0 14px rgba(74,222,128,0.25)";
                   dotBg="#4ade80"; dotClr="#07070f";
                 } else if (isWrong) {
@@ -425,8 +378,8 @@ function App() {
 
                 return (
                   <button key={opt.letter} disabled={isG}
-                    onClick={() => { if (isQ && !timeUp) { setSelAns(opt.letter); sfx("select"); } }}
-                    style={{ display:"flex", alignItems:"flex-start", gap:10, padding:"14px", borderRadius:10, background:bg, border:`1px solid ${bdr}`, color:txt, textAlign:"left", fontSize:"clamp(13px,1.8vw,15px)", fontWeight:600, fontFamily:"'Rajdhani',sans-serif", lineHeight:1.4, cursor:(isQ && !timeUp) ? "pointer" : "default", transition:"all 0.15s", boxShadow:shadow, width:"100%" }}>
+                    onClick={() => { if (isQ) { setSelAns(opt.letter); sfx("select"); } }}
+                    style={{ display:"flex", alignItems:"flex-start", gap:10, padding:"14px", borderRadius:10, background:bg, border:`1px solid ${bdr}`, color:txt, textAlign:"left", fontSize:"clamp(13px,1.8vw,15px)", fontWeight:600, fontFamily:"'Rajdhani',sans-serif", lineHeight:1.4, cursor:isQ ? "pointer" : "default", transition:"all 0.15s", boxShadow:shadow, width:"100%" }}>
                     <span style={{ width:24, height:24, borderRadius:"50%", display:"inline-flex", alignItems:"center", justifyContent:"center", background:dotBg, color:dotClr, fontSize:11, fontWeight:700, flexShrink:0, fontFamily:"'Orbitron',monospace", transition:"all 0.15s" }}>
                       {i+1}
                     </span>
@@ -437,8 +390,7 @@ function App() {
             </div>
           </div>
 
-          {/* Ohodnotit – jen pokud je vybrána odpověď a čas ještě neuplynul */}
-          {isQ && selAns && !timeUp && (
+          {isQ && selAns && (
             <div style={{ display:"flex", justifyContent:"center", animation:"popIn 0.25s ease" }}>
               <button onClick={gradeIt} style={{ background:`linear-gradient(135deg,${teamColor}35,${teamColor}18)`, border:`1px solid ${teamColor}66`, borderRadius:12, padding:"13px 52px", color:"#fff", fontFamily:"'Cinzel Decorative',serif", fontSize:14, fontWeight:700, cursor:"pointer", letterSpacing:"0.07em", boxShadow:`0 0 20px ${teamColor}30` }}>
                 Ohodnotit ⚡
@@ -446,7 +398,6 @@ function App() {
             </div>
           )}
 
-          {/* Výsledek (hodnocení) */}
           {isG && (
             <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:12 }}>
               <div style={{ textAlign:"center", animation:"flashIn 0.4s ease" }}>
@@ -454,20 +405,6 @@ function App() {
                   {gr.msg.toUpperCase()}
                 </p>
               </div>
-
-              {/* auto-advance countdown bar */}
-              {gr.autoGraded && (
-                <div style={{ width:"100%", maxWidth:420, textAlign:"center" }}>
-                  <p style={{ fontSize:12, color:"rgba(255,255,255,0.3)", marginBottom:6, fontFamily:"'Rajdhani',sans-serif", letterSpacing:"0.1em" }}>
-                    AUTOMATICKY POKRAČUJE…
-                  </p>
-                  <div style={{ height:3, background:"rgba(255,255,255,0.08)", borderRadius:9999, overflow:"hidden" }}>
-                    <div style={{ height:"100%", background:"rgba(255,255,255,0.35)", borderRadius:9999, animation:`deplete ${AUTO_ADVANCE}ms linear forwards` }} />
-                  </div>
-                </div>
-              )}
-
-              {/* manual next button */}
               <button onClick={nextQ} style={{ background:isLastQ&&isLastR ? "#4ade80" : round.badge, color:"#07070f", border:"none", borderRadius:12, padding:"14px 44px", fontFamily:"'Cinzel Decorative',serif", fontSize:14, fontWeight:700, cursor:"pointer", letterSpacing:"0.07em", boxShadow:`0 0 24px ${isLastQ&&isLastR ? "#4ade80" : round.badge}55` }}>
                 {nextLabel}
               </button>
@@ -507,8 +444,5 @@ function App() {
   return null;
 }
 
-// Mount the app (Babel standalone + non-module setup expects globals)
-const rootEl = document.getElementById("root");
-if (rootEl) {
-  ReactDOM.createRoot(rootEl).render(<App />);
-}
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
