@@ -43,9 +43,9 @@ const QUESTIONS = {
 };
 
 const ROUNDS = [
-  { key: "easy",   label: "KOLO 1", subtitle: "Základní pojmy",    time: 45, swing: 5,  badge: "#4ade80" },
-  { key: "medium", label: "KOLO 2", subtitle: "Aplikovaná fyzika", time: 40, swing: 8,  badge: "#fbbf24" },
-  { key: "hard",   label: "KOLO 3", subtitle: "Pokročilé úlohy",   time: 30, swing: 12, badge: "#f87171" },
+  { key: "easy",   label: "KOLO 1", subtitle: "Základní pojmy",    time: 70, swing: 5,  badge: "#4ade80" },
+  { key: "medium", label: "KOLO 2", subtitle: "Aplikovaná fyzika", time: 70, swing: 8,  badge: "#fbbf24" },
+  { key: "hard",   label: "KOLO 3", subtitle: "Pokročilé úlohy",   time: 60, swing: 12, badge: "#f87171" },
 ];
 
 /* ── zvuk ────────────────────────────────────────────────────── */
